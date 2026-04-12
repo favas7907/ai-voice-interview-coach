@@ -1,0 +1,5 @@
+{
+  "name": "AI Voice Interview Coach",
+  "description": "A professional AI-powered mock interview platform with real-time voice interaction and detailed feedback.",
+  "requestFramePermissions": ["microphone"]
+}
