@@ -5,7 +5,7 @@ let genAI: GoogleGenAI | null = null;
 
 function getGenAI() {
   if (!genAI) {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
     if (!apiKey) {
       throw new Error("GEMINI_API_KEY is not set. Please configure it in the Secrets panel.");
     }
