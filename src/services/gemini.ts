@@ -7,101 +7,117 @@ function getGenAI() {
   if (!genAI) {
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
     if (!apiKey) {
-      throw new Error("GEMINI_API_KEY is not set. Please configure it in the Secrets panel.");
+      throw new Error("VITE_GEMINI_API_KEY is not set.");
     }
     genAI = new GoogleGenAI({ apiKey });
   }
   return genAI;
 }
 
+// 🔥 Retry helper
+async function retry(fn: () => Promise<any>, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (i === retries - 1) throw err;
+      await new Promise(res => setTimeout(res, 1000 * (i + 1)));
+    }
+  }
+}
+
+// 🔥 Fallback model handler
+async function generateWithFallback(prompt: string, schema?: any) {
+  const ai = getGenAI();
+
+  try {
+    return await retry(() =>
+      ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: prompt,
+        config: schema
+      })
+    );
+  } catch (e) {
+    console.warn("Primary model failed → switching to fallback");
+
+    return await ai.models.generateContent({
+      model: "gemini-1.5-flash",
+      contents: prompt,
+      config: schema
+    });
+  }
+}
+
 export const geminiService = {
   async generateInterviewPlan(setup: InterviewSetup): Promise<string[]> {
-    const ai = getGenAI();
     const prompt = `
-      You are a professional ${setup.role} interviewer. 
-      Generate a list of ${setup.questionCount} interview questions for a ${setup.level} level position.
-      Tech stack: ${setup.stack.join(", ")}.
-      Interview type: ${setup.type}.
-      Focus areas: ${setup.focusAreas.join(", ")}.
-      
-      The questions should follow this structure:
-      1. Introduction & Warm-up
-      2. Role-specific technical questions
-      3. Scenario-based/Behavioral questions
-      4. Closing
-      
-      Return ONLY a JSON array of strings.
-    `;
+You are a professional ${setup.role} interviewer. 
+Generate ${setup.questionCount} questions for a ${setup.level} role.
+Tech stack: ${setup.stack.join(", ")}.
+Type: ${setup.type}.
+Focus: ${setup.focusAreas.join(", ")}.
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: { type: Type.STRING }
-        }
+Return ONLY a JSON array.
+`;
+
+    const response = await generateWithFallback(prompt, {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING }
       }
     });
 
     try {
       return JSON.parse(response.text || "[]");
-    } catch (e) {
-      console.error("Failed to parse interview plan", e);
+    } catch {
       return [];
     }
   },
 
-  async generateFeedback(session: { transcript: TranscriptMessage[], setup: InterviewSetup }): Promise<InterviewFeedback> {
-    const ai = getGenAI();
+  async generateFeedback(session: {
+    transcript: TranscriptMessage[];
+    setup: InterviewSetup;
+  }): Promise<InterviewFeedback> {
     const transcriptText = session.transcript
       .map(m => `${m.role.toUpperCase()}: ${m.text}`)
       .join("\n");
 
     const prompt = `
-      Analyze the following interview transcript and provide detailed feedback.
-      Role: ${session.setup.role} (${session.setup.level})
-      
-      Transcript:
-      ${transcriptText}
-      
-      Provide a structured analysis including scores (0-100) for overall, communication, technical, clarity, and confidence.
-      Identify strengths, weaknesses, improvement tips, and practice exercises.
-      
-      Return ONLY a JSON object matching the InterviewFeedback interface.
-    `;
+Analyze this interview.
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            overallScore: { type: Type.NUMBER },
-            communicationScore: { type: Type.NUMBER },
-            technicalScore: { type: Type.NUMBER },
-            clarityScore: { type: Type.NUMBER },
-            confidenceScore: { type: Type.NUMBER },
-            strengths: { type: Type.ARRAY, items: { type: Type.STRING } },
-            weaknesses: { type: Type.ARRAY, items: { type: Type.STRING } },
-            improvementTips: { type: Type.ARRAY, items: { type: Type.STRING } },
-            practiceExercises: { type: Type.ARRAY, items: { type: Type.STRING } },
-            summary: { type: Type.STRING },
-            detailedAnalysis: { type: Type.STRING }
-          },
-          required: ["overallScore", "communicationScore", "technicalScore", "clarityScore", "confidenceScore", "strengths", "weaknesses", "improvementTips", "practiceExercises", "summary", "detailedAnalysis"]
+Role: ${session.setup.role} (${session.setup.level})
+
+${transcriptText}
+
+Return JSON with scores, strengths, weaknesses, tips, exercises.
+;
+
+    const response = await generateWithFallback(prompt, {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          overallScore: { type: Type.NUMBER },
+          communicationScore: { type: Type.NUMBER },
+          technicalScore: { type: Type.NUMBER },
+          clarityScore: { type: Type.NUMBER },
+          confidenceScore: { type: Type.NUMBER },
+          strengths: { type: Type.ARRAY, items: { type: Type.STRING } },
+          weaknesses: { type: Type.ARRAY, items: { type: Type.STRING } },
+          improvementTips: { type: Type.ARRAY, items: { type: Type.STRING } },
+          practiceExercises: { type: Type.ARRAY, items: { type: Type.STRING } },
+          summary: { type: Type.STRING },
+          detailedAnalysis: { type: Type.STRING }
         }
       }
     });
 
     try {
       return JSON.parse(response.text || "{}");
-    } catch (e) {
-      console.error("Failed to parse feedback", e);
-      throw new Error("Failed to generate feedback");
+    } catch {
+      throw new Error("Failed to parse feedback");
     }
   }
 };
