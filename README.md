@@ -26,11 +26,13 @@ A premium AI-powered mock interview platform that helps users practice job inter
 - A Google Cloud Project with Gemini API enabled
 - A Firebase Project
 
+  ### Demo Link : https://ai-voice-interview-coach-weld.vercel.app/
+
 ### Installation
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-username/ai-voice-interview-coach.git
+   git clone https://github.com/favas7907/ai-voice-interview-coach.git
    cd ai-voice-interview-coach
    ```
 
